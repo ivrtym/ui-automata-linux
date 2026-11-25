@@ -1,0 +1,224 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: wechat_channels_browse5
+description: |
+  Browse 5 recommended videos in WeChat Channels (微信视频号) on Linux Desktop.
+  Uses Tier-4 `PointerScroll` (`delta_y: -6`) scoped to the `WeChatAppEx`
+  Channels window + Tier-3 `OcrExtract` on the bottom caption/author region
+  (since `WeChatAppEx` exposes no child AT-SPI controls) and archives a
+  verification screenshot after the 5th video.
+
+params:
+  - name: watch_delay
+    description: Brief wait after switching each video so it loads and renders caption.
+    default: "1500ms"
+  - name: screenshot_path
+    description: Verification screenshot saved after browsing the 5th video.
+    default: "/tmp/wechat_channels_5.png"
+
+defaults:
+  timeout: 3s
+
+anchors:
+  wechat:
+    type: Root
+    process: wechat
+    selector: "[role=window]"
+  channels:
+    type: Root
+    process: WeChatAppEx
+    selector: "[role=window]"
+
+outputs:
+  - name: video_0
+    description: Baseline OCR text in caption/author area before scrolling.
+  - name: video_1
+    description: OCR text in caption/author area on video 1.
+  - name: video_2
+    description: OCR text in caption/author area on video 2.
+  - name: video_3
+    description: OCR text in caption/author area on video 3.
+  - name: video_4
+    description: OCR text in caption/author area on video 4.
+  - name: video_5
+    description: OCR text in caption/author area on video 5.
+
+phases:
+  - name: open_channels
+    precondition:
+      type: Not
+      condition:
+        type: WindowWithAttribute
+        process: WeChatAppEx
+        title:
+          contains: "微信"
+    mount: [wechat]
+    steps:
+      - intent: activate WeChat main window
+        action:
+          type: ActivateWindow
+          scope: wechat
+        expect:
+          type: WindowWithState
+          anchor: wechat
+          state: active
+
+      - intent: open or focus 视频号 window
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name=视频号]"
+        expect:
+          type: WindowWithAttribute
+          process: WeChatAppEx
+          title:
+            contains: "微信"
+
+  - name: browse_five_videos
+    mount: [channels]
+    steps:
+      - intent: bring 视频号 window to foreground
+        action:
+          type: ActivateWindow
+          scope: channels
+        expect:
+          type: WindowWithState
+          anchor: channels
+          state: active
+
+      - intent: capture baseline caption/author text via OCR
+        action:
+          type: OcrExtract
+          key: video_0
+          scope: channels
+          region: { x: 15, y: 780, width: 470, height: 90 }
+        expect:
+          type: Always
+
+      - intent: advance to video 1 via PointerScroll wheel down
+        action:
+          type: PointerScroll
+          scope: channels
+          delta_y: -6
+        expect:
+          type: Always
+
+      - intent: wait for video 1 to load and render
+        action:
+          type: Sleep
+          duration: "{param.watch_delay}"
+        expect:
+          type: Always
+
+      - intent: extract video 1 caption/author via OCR
+        action:
+          type: OcrExtract
+          key: video_1
+          scope: channels
+          region: { x: 15, y: 780, width: 470, height: 90 }
+        expect:
+          type: Always
+
+      - intent: advance to video 2 via PointerScroll wheel down
+        action:
+          type: PointerScroll
+          scope: channels
+          delta_y: -6
+        expect:
+          type: Always
+
+      - intent: wait for video 2 to load and render
+        action:
+          type: Sleep
+          duration: "{param.watch_delay}"
+        expect:
+          type: Always
+
+      - intent: extract video 2 caption/author via OCR
+        action:
+          type: OcrExtract
+          key: video_2
+          scope: channels
+          region: { x: 15, y: 780, width: 470, height: 90 }
+        expect:
+          type: Always
+
+      - intent: advance to video 3 via PointerScroll wheel down
+        action:
+          type: PointerScroll
+          scope: channels
+          delta_y: -6
+        expect:
+          type: Always
+
+      - intent: wait for video 3 to load and render
+        action:
+          type: Sleep
+          duration: "{param.watch_delay}"
+        expect:
+          type: Always
+
+      - intent: extract video 3 caption/author via OCR
+        action:
+          type: OcrExtract
+          key: video_3
+          scope: channels
+          region: { x: 15, y: 780, width: 470, height: 90 }
+        expect:
+          type: Always
+
+      - intent: advance to video 4 via PointerScroll wheel down
+        action:
+          type: PointerScroll
+          scope: channels
+          delta_y: -6
+        expect:
+          type: Always
+
+      - intent: wait for video 4 to load and render
+        action:
+          type: Sleep
+          duration: "{param.watch_delay}"
+        expect:
+          type: Always
+
+      - intent: extract video 4 caption/author via OCR
+        action:
+          type: OcrExtract
+          key: video_4
+          scope: channels
+          region: { x: 15, y: 780, width: 470, height: 90 }
+        expect:
+          type: Always
+
+      - intent: advance to video 5 via PointerScroll wheel down
+        action:
+          type: PointerScroll
+          scope: channels
+          delta_y: -6
+        expect:
+          type: Always
+
+      - intent: wait for video 5 to load and render
+        action:
+          type: Sleep
+          duration: "{param.watch_delay}"
+        expect:
+          type: Always
+
+      - intent: extract video 5 caption/author via OCR
+        action:
+          type: OcrExtract
+          key: video_5
+          scope: channels
+          region: { x: 15, y: 780, width: 470, height: 90 }
+        expect:
+          type: Always
+
+      - intent: capture screenshot of 视频号 after 5th video
+        action:
+          type: Screenshot
+          scope: channels
+          path: "{param.screenshot_path}"
+        expect:
+          type: FileExists
+          path: "{param.screenshot_path}"

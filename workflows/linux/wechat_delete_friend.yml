@@ -1,0 +1,270 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: wechat_delete_friend
+description: |
+  Delete a WeChat contact on Linux Desktop (WeChat 4.1 Qt XCB + AT-SPI2 + OCR fallback).
+  Supports lookup by nickname, remark (alias), or WeChat ID via the unified search bar:
+    1. Attaches to existing WeChat session (QT_QPA_PLATFORM=xcb) and restores from tray if hidden
+    2. Copies `query` to clipboard and pastes (`ctrl+v`) into search (supports CJK + ASCII)
+    3. Selects the first local `联系人` hit -> opens `聊天信息` drawer -> clicks contact avatar
+    4. Verifies `query` appears on the contact profile card (nickname / remark / wxid guard)
+    5. Opens profile card `更多` menu -> `删除联系人` -> confirms `删除` (or exits cleanly if `dry_run=true`)
+
+params:
+  - name: query
+    description: Target contact's nickname, remark (alias), or WeChat ID. Must be non-empty.
+    default: ""
+  - name: dry_run
+    description: Set to "true" to safely stop after verifying the `更多` -> `删除联系人` menu item without deleting.
+    default: "false"
+  - name: screenshot_path
+    description: Verification screenshot saved after completion.
+    default: "/tmp/wechat_after_delete.png"
+
+defaults:
+  timeout: 6s
+
+launch:
+  exe: /usr/bin/wechat
+  wait_for: wechat
+  reuse_existing: true
+  timeout: 20s
+  env:
+    QT_QPA_PLATFORM: xcb
+
+anchors:
+  wechat:
+    type: Root
+    process: wechat
+    selector: "[role=window]"
+
+phases:
+  - name: locate_contact
+    mount: [wechat]
+    steps:
+      - intent: raise and activate WeChat window (including restoring from 0x0 tray state)
+        action:
+          type: ActivateWindow
+          scope: wechat
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='通讯录']"
+
+      - intent: switch to 微信 tab so top search bar is active
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='微信']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='会话']"
+
+      - intent: clear existing search query if 清空 button is visible
+        precondition:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        expect:
+          type: Always
+
+      - intent: write target query into system clipboard (supports CJK and ASCII)
+        action:
+          type: Exec
+          command: sh
+          args:
+            - "-c"
+            - "if command -v wl-copy >/dev/null 2>&1; then wl-copy -- \"$1\" >/dev/null 2>&1; else printf '%s' \"$1\" | xclip -selection clipboard >/dev/null 2>&1; fi"
+            - "_"
+            - "{param.query}"
+        expect:
+          type: Always
+
+      - intent: click search edit box to focus cursor
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=edit][name='搜索']"
+        expect:
+          type: Always
+
+      - intent: paste query with ctrl+v and wait for local 联系人 match
+        action:
+          type: PressKey
+          scope: wechat
+          selector: ">> [role=edit][name='搜索']"
+          key: "ctrl+v"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: "> [role=pane] >> [role=list][name=''] >> [role='list item'][name='联系人']"
+
+      - intent: click the first matched local contact under 联系人
+        action:
+          type: Click
+          scope: wechat
+          selector: "> [role=pane] >> [role=list][name=''] >> [role='list item']:nth(1)"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='聊天信息']"
+
+  - name: open_and_verify_profile
+    steps:
+      - intent: open 聊天信息 drawer from chat header
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='聊天信息']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='添加']"
+
+      - intent: click contact avatar button inside 聊天信息 drawer to open floating profile card
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='添加']:parent > [role=button]:nth(0)"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: "> [role=pane]:nth(1) >> [role=button][name='更多']"
+
+      - intent: verify target query matches nickname, remark, or WeChat ID on the profile card
+        action:
+          type: NoOp
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: "> [role=pane]:nth(1) >> [role=label][name~='{param.query}']"
+
+  - name: delete_contact
+    steps:
+      - intent: open contact profile card 更多 menu
+        action:
+          type: Click
+          scope: wechat
+          selector: "> [role=pane]:nth(1) >> [role=button][name='更多']"
+        expect:
+          type: AnyOf
+          conditions:
+            - type: ElementVisible
+              scope: wechat
+              selector: ">> [role=menu] >> [role='menu item'][name='删除联系人']"
+            - type: OcrTextFound
+              scope: wechat
+              pattern:
+                contains: "删除联系人"
+
+      - intent: click 删除联系人 in popup menu (skipped in dry_run)
+        precondition:
+          type: EvalCondition
+          expr: "param.dry_run != 'true'"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=menu] >> [role='menu item'][name='删除联系人']"
+        fallback:
+          type: OcrClick
+          scope: wechat
+          pattern:
+            contains: "除联系人"
+        expect:
+          type: AnyOf
+          conditions:
+            - type: ElementVisible
+              scope: wechat
+              selector: ">> [role=button][name='删除']"
+            - type: OcrTextFound
+              scope: wechat
+              pattern:
+                contains: "清空聊天记录"
+
+      - intent: confirm deletion in modal dialog (skipped in dry_run)
+        precondition:
+          type: EvalCondition
+          expr: "param.dry_run != 'true'"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='删除']"
+        fallback:
+          type: OcrClick
+          scope: wechat
+          pattern:
+            exact: "删除"
+        expect:
+          type: Not
+          condition:
+            type: ElementVisible
+            scope: wechat
+            selector: "> [role=pane]:nth(1) >> [role=label][name~='{param.query}']"
+
+      - intent: in dry_run mode, dismiss menu safely without deleting any contact
+        precondition:
+          type: EvalCondition
+          expr: "param.dry_run == 'true'"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='通讯录']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='通讯录']"
+
+      - intent: capture verification screenshot evidence
+        action:
+          type: Screenshot
+          scope: wechat
+          path: "{param.screenshot_path}"
+        expect:
+          type: FileExists
+          path: "{param.screenshot_path}"
+
+  - name: return_to_main_ui
+    steps:
+      - intent: switch back to WeChat main Chats interface
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='微信']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='会话']"
+
+      - intent: close 聊天信息 drawer if still open
+        precondition:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='添加']"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='聊天信息']"
+        expect:
+          type: Not
+          condition:
+            type: ElementVisible
+            scope: wechat
+            selector: ">> [role=button][name='添加']"
+
+      - intent: clear search query if 清空 button is visible
+        precondition:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='会话']"

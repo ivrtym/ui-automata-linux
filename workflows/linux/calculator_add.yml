@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: calculator_add
+description: |
+  General Linux AT-SPI2 a + b workflow for GNOME Calculator (计算器).
+  Discovered on live GNOME Wayland: GTK4 AT-SPI2 reports (0, 0) origins,
+  so semantic SetValue on `source_view` + Invoke on `calc_result_button`
+  supports arbitrary multi-digit/decimal/negative `a + b` inputs without
+  coordinate clicks or locale-sensitive button names.
+
+params:
+  - name: a
+    description: Left addend (integer or decimal).
+    default: "123"
+  - name: b
+    description: Right addend (integer or decimal).
+    default: "456"
+
+defaults:
+  timeout: 8s
+
+launch:
+  app: gnome-calculator
+  wait_for: calc
+  timeout: 30s
+
+anchors:
+  calc:
+    type: Root
+    process: gnome-calculator
+    selector: "*"
+  display:
+    type: Stable
+    parent: calc
+    selector: ">> [role=edit][id=source_view]"
+
+outputs:
+  - name: result
+    description: Evaluated result text read back from `source_view`.
+
+phases:
+  - name: compute_a_plus_b
+    mount: [calc, display]
+    unmount: [display]
+    steps:
+      - intent: wait until calculator editor and equals button are ready
+        action:
+          type: NoOp
+        expect:
+          type: AllOf
+          conditions:
+            - type: ElementFound
+              scope: display
+              selector: "*"
+            - type: ElementFound
+              scope: calc
+              selector: ">> [role=button][id=calc_result_button]"
+
+      - intent: enter arbitrary a+b expression directly via EditableText (atomic overwrite)
+        action:
+          type: SetValue
+          scope: display
+          selector: "*"
+          value: "{param.a}+{param.b}"
+        expect:
+          type: ElementHasText
+          scope: display
+          selector: "*"
+          pattern:
+            contains: "{param.a}+{param.b}"
+
+      - intent: trigger calculation via calc_result_button (=)
+        action:
+          type: Invoke
+          scope: calc
+          selector: ">> [role=button][id=calc_result_button]"
+        expect:
+          type: AllOf
+          conditions:
+            - type: ElementHasText
+              scope: display
+              selector: "*"
+              pattern:
+                non_empty: true
+            - type: Not
+              condition:
+                type: ElementHasText
+                scope: display
+                selector: "*"
+                pattern:
+                  exact: "{param.a}+{param.b}"
+
+      - intent: extract calculated result from source_view
+        action:
+          type: Extract
+          key: result
+          scope: display
+          selector: "*"
+          attribute: text
+        expect:
+          type: Always
+
+  - name: cleanup
+    finally: true
+    steps:
+      - intent: close GNOME Calculator window
+        action:
+          type: CloseWindow
+          scope: calc
+        expect:
+          type: WindowClosed
+          anchor: calc

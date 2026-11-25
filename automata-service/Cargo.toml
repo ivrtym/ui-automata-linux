@@ -1,0 +1,31 @@
+[package]
+name = "automata-service"
+description = "Unified session-aware AutomationService, typed Command/Event protocol, UDS daemon, and recorder for ui-automata Linux"
+repository = "https://github.com/ivrtym/ui-automata-linux"
+version = { workspace = true }
+edition = { workspace = true }
+license = "MIT"
+
+[[bin]]
+name = "automata"
+path = "src/bin/automata.rs"
+
+[dependencies]
+automata-linux = { path = "../automata-linux", version = "0.1.0" }
+automata-browser = { path = "../automata-browser", version = "0.1.0" }
+ui-automata = { path = "../ui-automata", version = "0.1.0" }
+
+anyhow = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+dirs = { workspace = true }
+glob = { workspace = true }
+hex = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }

@@ -1,0 +1,24 @@
+[package]
+name = "automata-browser"
+description = "Browser Control via CDP for UI Automation"
+repository = "https://github.com/ivrtym/ui-automata-linux"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[[bin]]
+name = "automata-browser"
+path = "src/main.rs"
+
+[lib]
+name = "automata_browser"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+futures-util = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }

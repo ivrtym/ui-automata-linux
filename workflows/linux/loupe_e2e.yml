@@ -1,0 +1,224 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: loupe_e2e
+description: |
+  End-to-end automated test workflow for GNOME Image Viewer (图像查看器 / loupe)
+  on Linux Wayland/X11:
+    1. Cold-launches loupe on deterministic fixture 01_alpha.png via launch.wait_for
+    2. Inspects image metadata (dimensions & format) via AT-SPI2 properties sidebar
+    3. Verifies actual rendered image pixel content via OCR (OcrExtract + OcrTextFound)
+    4. Exercises AT-SPI -> OCR step.fallback resilience when selector is missing
+    5. Exercises zoom toggle & carousel next/prev navigation (01_alpha <-> 02_beta)
+    6. Captures visual evidence screenshot via Portal/screen capture
+    7. Cleanly closes the window in finally via CloseWindow (Wayland titlebar fallback)
+
+params:
+  - name: image_uri
+    description: File URI of the first fixture image (01_alpha.png).
+    default: "file:///home/ivrty/workspace/antigravity/uia_research/ui-automata_linux/workflows/linux/fixtures/loupe/01_alpha.png"
+  - name: expected_alpha_text
+    description: Primary text expected inside 01_alpha.png.
+    default: "LOUPE VISION ALPHA"
+  - name: expected_beta_text
+    description: Primary text expected inside 02_beta.png.
+    default: "LOUPE VISION BETA"
+  - name: screenshot_path
+    description: Path where the verification screenshot is saved.
+    default: "/tmp/loupe_e2e_evidence.png"
+
+defaults:
+  timeout: 8s
+
+launch:
+  app: "{param.image_uri}"
+  wait_for: loupe
+  timeout: 8s
+
+anchors:
+  loupe:
+    type: Root
+    process: loupe
+    selector: "[id=LpWindow]"
+
+outputs:
+  - name: image_dimensions
+    description: Image pixel dimensions read from Loupe AT-SPI2 properties panel.
+  - name: image_format
+    description: Image format read from Loupe AT-SPI2 properties panel.
+  - name: alpha_ocr_text
+    description: OCR line matched in 01_alpha.png.
+  - name: fallback_ocr_code
+    description: Status code extracted by OCR fallback when AT-SPI selector fails.
+  - name: beta_ocr_text
+    description: OCR line matched in 02_beta.png after clicking Next.
+
+phases:
+  - name: inspect_initial_image
+    mount: [loupe]
+    steps:
+      - intent: wait until 01_alpha.png header label is ready
+        action:
+          type: NoOp
+        expect:
+          type: ElementFound
+          scope: loupe
+          selector: ">> [role=label][name='01_alpha.png']"
+
+      - intent: ensure properties sidebar is open (idempotent via NoOp + Invoke fallback)
+        timeout: 800ms
+        action:
+          type: NoOp
+        fallback:
+          type: Invoke
+          scope: loupe
+          selector: ">> [id=properties_button]"
+        expect:
+          type: ElementFound
+          scope: loupe
+          selector: ">> [id=image_format] >> [id=subtitle][name=PNG]"
+
+      - intent: extract image dimensions via AT-SPI2
+        action:
+          type: Extract
+          key: image_dimensions
+          scope: loupe
+          selector: ">> [id=image_size] >> [id=subtitle]"
+          attribute: name
+        expect:
+          type: ElementHasText
+          scope: loupe
+          selector: ">> [id=image_size] >> [id=subtitle]"
+          pattern:
+            contains: "880"
+
+      - intent: extract image format via AT-SPI2
+        action:
+          type: Extract
+          key: image_format
+          scope: loupe
+          selector: ">> [id=image_format] >> [id=subtitle]"
+          attribute: name
+        expect:
+          type: ElementHasText
+          scope: loupe
+          selector: ">> [id=image_format] >> [id=subtitle]"
+          pattern:
+            exact: "PNG"
+
+      - intent: verify rendered 01_alpha.png pixels via OCR
+        action:
+          type: OcrExtract
+          key: alpha_ocr_text
+          scope: loupe
+          pattern:
+            contains: "{param.expected_alpha_text}"
+          min_confidence: 0.4
+        expect:
+          type: OcrTextFound
+          scope: loupe
+          pattern:
+            contains: "CODE 101"
+          min_confidence: 0.4
+
+      - intent: exercise AT-SPI failure -> OCR fallback recovery path
+        timeout: 500ms
+        action:
+          type: Click
+          scope: loupe
+          selector: ">> [id=nonexistent_canvas_control]"
+        fallback:
+          type: OcrExtract
+          key: fallback_ocr_code
+          scope: loupe
+          pattern:
+            contains: "CODE 101"
+          min_confidence: 0.4
+        expect:
+          type: OcrTextFound
+          scope: loupe
+          pattern:
+            contains: "CODE 101 READY"
+          min_confidence: 0.4
+
+  - name: zoom_and_carousel_navigation
+    steps:
+      - intent: toggle zoom mode in via AT-SPI2
+        action:
+          type: Invoke
+          scope: loupe
+          selector: ">> [id=zoom_toggle]"
+        expect:
+          type: ElementEnabled
+          scope: loupe
+          selector: ">> [id=zoom_toggle]"
+
+      - intent: toggle zoom back to fit window
+        action:
+          type: Invoke
+          scope: loupe
+          selector: ">> [id=zoom_toggle]"
+        expect:
+          type: ElementFound
+          scope: loupe
+          selector: ">> [id=next_button]"
+
+      - intent: navigate to next image (02_beta.png)
+        action:
+          type: Invoke
+          scope: loupe
+          selector: ">> [id=next_button]"
+        expect:
+          type: ElementFound
+          scope: loupe
+          selector: ">> [role=label][name='02_beta.png']"
+
+      - intent: verify rendered 02_beta.png pixels via OCR after navigation
+        action:
+          type: OcrExtract
+          key: beta_ocr_text
+          scope: loupe
+          pattern:
+            contains: "{param.expected_beta_text}"
+          min_confidence: 0.4
+        expect:
+          type: OcrTextFound
+          scope: loupe
+          pattern:
+            contains: "CODE 202"
+          min_confidence: 0.4
+
+      - intent: archive verification screenshot of 02_beta.png
+        action:
+          type: Screenshot
+          scope: loupe
+          path: "{param.screenshot_path}"
+        expect:
+          type: FileExists
+          path: "{param.screenshot_path}"
+
+      - intent: navigate back to previous image (01_alpha.png)
+        action:
+          type: Invoke
+          scope: loupe
+          selector: ">> [id=prev_button]"
+        expect:
+          type: AllOf
+          conditions:
+            - type: ElementFound
+              scope: loupe
+              selector: ">> [role=label][name='01_alpha.png']"
+            - type: OcrTextFound
+              scope: loupe
+              pattern:
+                contains: "{param.expected_alpha_text}"
+              min_confidence: 0.4
+
+  - name: cleanup
+    finally: true
+    steps:
+      - intent: close GNOME Image Viewer window cleanly
+        action:
+          type: CloseWindow
+          scope: loupe
+        expect:
+          type: WindowClosed
+          anchor: loupe

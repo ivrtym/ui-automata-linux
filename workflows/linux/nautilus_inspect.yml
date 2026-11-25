@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: nautilus_inspect
+description: |
+  Non-destructive Linux AT-SPI2 smoke workflow — attaches to an open GNOME
+  Files (Nautilus) window and extracts visible directory entries.
+
+outputs:
+  - name: entries
+    description: Visible entries in the Nautilus content view.
+
+defaults:
+  timeout: 3s
+
+anchors:
+  nautilus:
+    type: Root
+    process: nautilus
+    selector: "[id=NautilusWindow]"
+
+  content_view:
+    type: Stable
+    parent: nautilus
+    selector: ">> [role=table][name=内容视图]"
+
+phases:
+  - name: inspect_nautilus
+    mount: [nautilus, content_view]
+    steps:
+      - intent: verify ui-automata_linux folder is visible in Nautilus
+        action:
+          type: Extract
+          key: entries
+          scope: content_view
+          selector: ">> [role='table cell']"
+          attribute: name
+          multiple: true
+        expect:
+          type: ElementFound
+          scope: content_view
+          selector: ">> [role='table cell'][name~=ui-automata_linux]"

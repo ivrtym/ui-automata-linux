@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: calculator_smoke
+description: |
+  Linux AT-SPI2 end-to-end smoke workflow for GNOME Calculator (计算器).
+  Cold-launches the app, performs 7 + 8 = via semantic Invoke actions
+  (GTK4/Wayland reports window-relative bounds, so coordinate clicks are unreliable),
+  asserts the display shows 15, extracts it, and closes the window in finally.
+
+params:
+  - name: expr_left
+    description: Left operand button label.
+    default: "7"
+  - name: expr_right
+    description: Right operand button label.
+    default: "8"
+  - name: expected_result
+    description: Expected display text after pressing '='.
+    default: "15"
+
+defaults:
+  timeout: 8s
+
+launch:
+  app: gnome-calculator
+  wait_for: calc
+  timeout: 30s
+
+anchors:
+  # Full process name; the agent normalizes the /proc comm 15-char truncation
+  # ("gnome-calculato") so exact-name matching works.
+  calc:
+    type: Root
+    process: gnome-calculator
+    selector: "*"
+
+outputs:
+  - name: display_text
+    description: Text shown in the calculator display after the calculation.
+
+phases:
+  - name: calculate
+    mount: [calc]
+    steps:
+      - intent: wait until calculator keypad is ready
+        action:
+          type: NoOp
+        expect:
+          type: ElementFound
+          scope: calc
+          selector: ">> [role=button][name='C']"
+
+      - intent: clear the display
+        action:
+          type: Invoke
+          scope: calc
+          selector: ">> [role=button][name='C']"
+        expect:
+          type: Always
+
+      - intent: enter left operand
+        action:
+          type: Invoke
+          scope: calc
+          selector: ">> [role=button][name='{param.expr_left}']"
+        expect:
+          type: Always
+
+      - intent: press plus
+        action:
+          type: Invoke
+          scope: calc
+          selector: ">> [role=button][name='+']"
+        expect:
+          type: Always
+
+      - intent: enter right operand
+        action:
+          type: Invoke
+          scope: calc
+          selector: ">> [role=button][name='{param.expr_right}']"
+        expect:
+          type: Always
+
+      - intent: press equals
+        action:
+          type: Invoke
+          scope: calc
+          selector: ">> [role=button][name='=']"
+        expect:
+          type: ElementHasText
+          scope: calc
+          selector: ">> [role=edit]"
+          pattern:
+            contains: "{param.expected_result}"
+
+      - intent: extract the display value
+        action:
+          type: Extract
+          key: display_text
+          scope: calc
+          selector: ">> [role=edit]"
+          attribute: text
+        expect:
+          type: Always
+
+  - name: cleanup
+    finally: true
+    steps:
+      - intent: close GNOME Calculator window
+        action:
+          type: CloseWindow
+          scope: calc
+        expect:
+          type: WindowClosed
+          anchor: calc

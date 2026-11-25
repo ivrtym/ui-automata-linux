@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: wechat_login
+description: |
+  Linux XWayland (`QT_QPA_PLATFORM=xcb`) AT-SPI2 + OCR workflow to launch WeChat 4.1
+  and log in cleanly (supports already-logged-in detection, cached-account quick login,
+  and waiting for user phone confirmation / QR scan).
+
+  Runtime prerequisite on Wayland desktops:
+    Export `QT_QPA_PLATFORM=xcb` before running so Qt exposes full AT-SPI2 actions
+    and `x11rb` can capture window screenshots without Portal flashes.
+
+params:
+  - name: confirm_timeout
+    description: Timeout waiting for user phone confirmation or QR scan completion.
+    default: "90s"
+
+defaults:
+  timeout: 8s
+
+launch:
+  exe: /usr/bin/wechat
+  wait_for: login_win
+  reuse_existing: true
+  timeout: 20s
+  env:
+    QT_QPA_PLATFORM: xcb
+
+anchors:
+  login_win:
+    type: Root
+    process: wechat
+    selector: "[role=window]"
+  main_win:
+    type: Root
+    process: wechat
+    selector: "[role=window]"
+
+phases:
+  - name: trigger_login
+    mount: [login_win]
+    steps:
+      - intent: raise and activate WeChat window (including restoring from 0x0 tray state)
+        action:
+          type: ActivateWindow
+          scope: login_win
+        expect:
+          type: Always
+
+      - intent: wait until WeChat login screen or main window is visible
+        action:
+          type: NoOp
+        timeout: 15s
+        expect:
+          type: AnyOf
+          conditions:
+            - type: ElementVisible
+              scope: login_win
+              selector: ">> [role=button][name='通讯录']"
+            - type: ElementVisible
+              scope: login_win
+              selector: ">> [role=button][name='登录|进入微信']"
+            - type: ElementVisible
+              scope: login_win
+              selector: ">> [role=label][name='扫码登录']"
+
+      - intent: trigger primary login button via Enter key if cached quick-login screen is shown
+        precondition:
+          type: ElementVisible
+          scope: login_win
+          selector: ">> [role=button][name='登录|进入微信']"
+        action:
+          type: PressKey
+          scope: login_win
+          selector: ">> [role=button][name='登录|进入微信']"
+          key: "{ENTER}"
+        fallback:
+          type: Click
+          scope: login_win
+          selector: ">> [role=button][name='登录|进入微信']"
+        expect:
+          type: AnyOf
+          conditions:
+            - type: ElementVisible
+              scope: login_win
+              selector: ">> [role=button][name='通讯录']"
+            - type: ElementVisible
+              scope: login_win
+              selector: ">> [role=label][name~='手机']"
+            - type: ElementVisible
+              scope: login_win
+              selector: ">> [role=label][name='正在进入']"
+            - type: ElementVisible
+              scope: login_win
+              selector: ">> [role=label][name='扫码登录']"
+            - type: WindowClosed
+              anchor: login_win
+
+      - intent: wait for phone confirmation or QR scan until login window transitions
+        precondition:
+          type: Not
+          condition:
+            type: ElementVisible
+            scope: login_win
+            selector: ">> [role=button][name='通讯录']"
+        action:
+          type: NoOp
+        timeout: "{param.confirm_timeout}"
+        expect:
+          type: AnyOf
+          conditions:
+            - type: ElementVisible
+              scope: login_win
+              selector: ">> [role=button][name='通讯录']"
+            - type: WindowClosed
+              anchor: login_win
+
+  - name: await_main_window
+    steps:
+      - intent: wait for WeChat main window to appear after login transition
+        action:
+          type: NoOp
+        timeout: 20s
+        expect:
+          type: WindowWithAttribute
+          process: wechat
+          title:
+            contains: "微信"
+
+  - name: verify_logged_in
+    mount: [main_win]
+    steps:
+      - intent: verify main WeChat navigation (通讯录) is visible
+        action:
+          type: NoOp
+        timeout: 15s
+        expect:
+          type: ElementVisible
+          scope: main_win
+          selector: ">> [role=button][name='通讯录']"

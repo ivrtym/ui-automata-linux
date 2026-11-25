@@ -1,0 +1,345 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: wechat_comment_and_delete
+description: |
+  End-to-end WeChat Moments comment + delete verification workflow on Linux Desktop (WeChat 4.1 Qt XCB):
+    1. Attaches to WeChat main window (`QT_QPA_PLATFORM=xcb`) and opens target contact's personal `朋友圈` window
+    2. Opens the first dated post (`详情` view) -> expands `••` -> clicks `评论`
+    3. Copies `{param.comment}` to clipboard, pastes (`ctrl+v`), clicks `发送`, and asserts OCR sees `{param.comment}`
+    4. Right-clicks the posted comment -> clicks `删除` in popup menu -> asserts `{param.comment}` disappears
+    5. Captures verification screenshot evidence
+
+params:
+  - name: query
+    description: Target contact's nickname, remark (alias), or WeChat ID.
+    default: "明珠囚瑕"
+  - name: comment
+    description: Comment text to post and then delete.
+    default: "test"
+  - name: screenshot_path
+    description: Verification screenshot saved after comment deletion completes.
+    default: "/tmp/wechat_comment_deleted.png"
+
+defaults:
+  timeout: 8s
+
+launch:
+  exe: /usr/bin/wechat
+  wait_for: wechat
+  reuse_existing: true
+  timeout: 20s
+  env:
+    QT_QPA_PLATFORM: xcb
+
+anchors:
+  wechat:
+    type: Root
+    process: wechat
+    selector: "[role=window][name='微信']"
+  moments:
+    type: Root
+    process: wechat
+    selector: "[role=window][name='朋友圈']"
+
+phases:
+  - name: open_contact_moments
+    mount: [wechat]
+    steps:
+      - intent: raise and activate WeChat main window
+        action:
+          type: ActivateWindow
+          scope: wechat
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='通讯录']"
+
+      - intent: switch to 微信 tab so top search bar is active
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='微信']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='会话']"
+
+      - intent: clear existing search query if 清空 button is visible
+        precondition:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        expect:
+          type: Always
+
+      - intent: copy target query into system clipboard
+        action:
+          type: Exec
+          command: sh
+          args:
+            - "-c"
+            - "if command -v wl-copy >/dev/null 2>&1; then wl-copy -- \"$1\" >/dev/null 2>&1; else printf '%s' \"$1\" | xclip -selection clipboard >/dev/null 2>&1; fi"
+            - "_"
+            - "{param.query}"
+        expect:
+          type: Always
+
+      - intent: click search edit box to focus cursor
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=edit][name='搜索']"
+        expect:
+          type: Always
+
+      - intent: paste query with ctrl+v and wait for local 联系人 match
+        action:
+          type: PressKey
+          scope: wechat
+          selector: ">> [role=edit][name='搜索']"
+          key: "ctrl+v"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: "> [role=pane] >> [role=list][name=''] >> [role='list item'][name='联系人']"
+
+      - intent: click first matched local contact under 联系人
+        action:
+          type: Click
+          scope: wechat
+          selector: "> [role=pane] >> [role=list][name=''] >> [role='list item']:nth(1)"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='聊天信息']"
+
+      - intent: open 聊天信息 drawer from chat header
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='聊天信息']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='添加']"
+
+      - intent: click contact avatar inside 聊天信息 drawer to open floating profile card
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='添加']:parent > [role=button]:nth(0)"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: "> [role=pane]:nth(1) >> [role=label][name='朋友圈']"
+
+      - intent: click 朋友圈 preview row in profile card to open personal Moments window
+        action:
+          type: Click
+          scope: wechat
+          selector: "> [role=pane]:nth(1) >> [role=label][name='朋友圈']:ancestor(2) >> [role=button]:nth(0)"
+        expect:
+          type: WindowWithAttribute
+          process: wechat
+          title:
+            exact: "朋友圈"
+
+  - name: post_comment
+    mount: [moments]
+    steps:
+      - intent: activate personal 朋友圈 window to foreground
+        action:
+          type: ActivateWindow
+          scope: moments
+        expect:
+          type: WindowWithState
+          anchor: moments
+          state: active
+
+      - intent: open first dated Moments post detail view
+        action:
+          type: Click
+          scope: moments
+          selector: ">> [role=list] >> [role='list item'][name~=月|昨天|今天|刚刚|小时前|分钟前]"
+        expect:
+          type: ElementVisible
+          scope: moments
+          selector: ">> [role=label][name='详情']"
+
+      - intent: ensure 朋友圈 window stays active before •• click
+        action:
+          type: ActivateWindow
+          scope: moments
+        expect:
+          type: WindowWithState
+          anchor: moments
+          state: active
+
+      - intent: click bottom-right •• interaction button
+        action:
+          type: ClickAt
+          scope: moments
+          selector: ">> [role=list] >> [role='list item']:nth(0)"
+          x_pct: 0.908
+          y_pct: 0.964
+          kind: left
+        expect:
+          type: ElementVisible
+          scope: moments
+          selector: ">> [role=button][name='评论']"
+
+      - intent: click 评论 button to open self-drawn comment box
+        action:
+          type: Click
+          scope: moments
+          selector: ">> [role=button][name='评论']"
+        expect:
+          type: OcrTextFound
+          scope: moments
+          pattern:
+            contains: "评论"
+
+      - intent: focus inside comment input area
+        action:
+          type: ClickAt
+          scope: moments
+          selector: ">> [role=list]:nth(2) >> [role='list item']:nth(1)"
+          x_pct: 0.35
+          y_pct: 0.35
+          kind: left
+        expect:
+          type: Always
+
+      - intent: copy comment text into clipboard
+        action:
+          type: Exec
+          command: sh
+          args:
+            - "-c"
+            - "if command -v wl-copy >/dev/null 2>&1; then wl-copy -- \"$1\" >/dev/null 2>&1; else printf '%s' \"$1\" | xclip -selection clipboard >/dev/null 2>&1; fi"
+            - "_"
+            - "{param.comment}"
+        expect:
+          type: Always
+
+      - intent: paste comment text via ctrl+v
+        action:
+          type: PressKey
+          scope: moments
+          key: "ctrl+v"
+        expect:
+          type: Always
+
+      - intent: click 发送 button inside comment box and verify comment appears
+        action:
+          type: ClickAt
+          scope: moments
+          selector: ">> [role=list]:nth(2) >> [role='list item']:nth(1)"
+          x_pct: 0.81
+          y_pct: 0.72
+          kind: left
+        expect:
+          type: OcrTextFound
+          scope: moments
+          pattern:
+            contains: "{param.comment}"
+
+  - name: delete_comment
+    steps:
+      - intent: right-click posted comment row to open context menu
+        action:
+          type: ClickAt
+          scope: moments
+          selector: ">> [role=list]:nth(2) >> [role='list item']:nth(1)"
+          x_pct: 0.45
+          y_pct: 0.65
+          kind: right
+        expect:
+          type: ElementVisible
+          scope: moments
+          selector: ">> [role=menu] >> [role='menu item'][name='删除']"
+
+      - intent: click 删除 menu item and verify comment is removed
+        action:
+          type: Click
+          scope: moments
+          selector: ">> [role=menu] >> [role='menu item'][name='删除']"
+        expect:
+          type: Not
+          condition:
+            type: OcrTextFound
+            scope: moments
+            pattern:
+              contains: "{param.comment}"
+
+      - intent: capture verification screenshot after comment deletion
+        action:
+          type: Screenshot
+          scope: moments
+          path: "{param.screenshot_path}"
+        expect:
+          type: FileExists
+          path: "{param.screenshot_path}"
+
+  - name: return_to_main_ui
+    steps:
+      - intent: close 朋友圈 window cleanly
+        action:
+          type: Click
+          scope: moments
+          selector: ">> [role=button][name='关闭']"
+        expect:
+          type: WindowClosed
+          anchor: moments
+
+      - intent: raise and focus WeChat main window
+        action:
+          type: ActivateWindow
+          scope: wechat
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='微信']"
+
+      - intent: switch to 微信 tab and close any floating profile card
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='微信']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='会话']"
+
+      - intent: close 聊天信息 drawer if still open
+        precondition:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='添加']"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='聊天信息']"
+        expect:
+          type: Not
+          condition:
+            type: ElementVisible
+            scope: wechat
+            selector: ">> [role=button][name='添加']"
+
+      - intent: clear search query if 清空 button is visible
+        precondition:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='会话']"

@@ -1,0 +1,282 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: wechat_like_moments
+description: |
+  Like the first Moments post of a target WeChat contact on Linux Desktop (WeChat 4.1 Qt XCB).
+  Supports lookup by nickname, remark (alias), or WeChat ID:
+    1. Attaches to existing WeChat session (QT_QPA_PLATFORM=xcb) and searches `query` via clipboard paste
+    2. Opens target contact's profile card -> clicks `朋友圈` album preview row
+    3. Raises the independent `朋友圈` window -> opens the first dated post (`详情`)
+    4. Clicks the bottom-right `••` button -> clicks `赞` if not already liked (`取消` skips toggle)
+    5. Captures post-like screenshot evidence
+
+params:
+  - name: query
+    description: Target contact's nickname, remark (alias), or WeChat ID.
+    default: "明珠囚瑕"
+  - name: screenshot_path
+    description: Verification screenshot saved after completion.
+    default: "/tmp/wechat_moments_liked.png"
+
+defaults:
+  timeout: 8s
+
+launch:
+  exe: /usr/bin/wechat
+  wait_for: wechat
+  reuse_existing: true
+  timeout: 20s
+  env:
+    QT_QPA_PLATFORM: xcb
+
+anchors:
+  wechat:
+    type: Root
+    process: wechat
+    selector: "[role=window][name='微信']"
+  moments:
+    type: Root
+    process: wechat
+    selector: "[role=window][name='朋友圈']"
+
+phases:
+  - name: open_contact_moments
+    mount: [wechat]
+    steps:
+      - intent: raise and activate WeChat main window
+        action:
+          type: ActivateWindow
+          scope: wechat
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='通讯录']"
+
+      - intent: switch to 微信 tab so top search bar is active
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='微信']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='会话']"
+
+      - intent: clear existing search query if 清空 button is visible
+        precondition:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        expect:
+          type: Always
+
+      - intent: copy target query into system clipboard (supports CJK and ASCII)
+        action:
+          type: Exec
+          command: sh
+          args:
+            - "-c"
+            - "if command -v wl-copy >/dev/null 2>&1; then wl-copy -- \"$1\" >/dev/null 2>&1; else printf '%s' \"$1\" | xclip -selection clipboard >/dev/null 2>&1; fi"
+            - "_"
+            - "{param.query}"
+        expect:
+          type: Always
+
+      - intent: click search edit box to focus cursor
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=edit][name='搜索']"
+        expect:
+          type: Always
+
+      - intent: paste query with ctrl+v and wait for local 联系人 match
+        action:
+          type: PressKey
+          scope: wechat
+          selector: ">> [role=edit][name='搜索']"
+          key: "ctrl+v"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: "> [role=pane] >> [role=list][name=''] >> [role='list item'][name='联系人']"
+
+      - intent: click the first matched local contact under 联系人
+        action:
+          type: Click
+          scope: wechat
+          selector: "> [role=pane] >> [role=list][name=''] >> [role='list item']:nth(1)"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='聊天信息']"
+
+      - intent: open 聊天信息 drawer from chat header
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='聊天信息']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='添加']"
+
+      - intent: click contact avatar inside 聊天信息 drawer to open floating profile card
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='添加']:parent > [role=button]:nth(0)"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: "> [role=pane]:nth(1) >> [role=label][name='朋友圈']"
+
+      - intent: click 朋友圈 preview row in profile card to open personal Moments window
+        action:
+          type: Click
+          scope: wechat
+          selector: "> [role=pane]:nth(1) >> [role=label][name='朋友圈']:ancestor(2) >> [role=button]:nth(0)"
+        expect:
+          type: WindowWithAttribute
+          process: wechat
+          title:
+            exact: "朋友圈"
+
+  - name: open_first_post
+    mount: [moments]
+    steps:
+      - intent: activate personal 朋友圈 window to foreground
+        action:
+          type: ActivateWindow
+          scope: moments
+        expect:
+          type: WindowWithState
+          anchor: moments
+          state: active
+
+      - intent: click the first dated Moments post to open 详情 view
+        action:
+          type: Click
+          scope: moments
+          selector: ">> [role=list] >> [role='list item'][name~=月|昨天|今天|刚刚|小时前|分钟前]"
+        expect:
+          type: ElementVisible
+          scope: moments
+          selector: ">> [role=label][name='详情']"
+
+  - name: like_first_post
+    steps:
+      - intent: ensure 朋友圈 详情 window is active in foreground
+        action:
+          type: ActivateWindow
+          scope: moments
+        expect:
+          type: WindowWithState
+          anchor: moments
+          state: active
+
+      - intent: click bottom-right •• interaction button on post detail item
+        action:
+          type: ClickAt
+          scope: moments
+          selector: ">> [role=list] >> [role='list item']:nth(0)"
+          x_pct: 0.908
+          y_pct: 0.964
+          kind: left
+        expect:
+          type: AnyOf
+          conditions:
+            - type: ElementVisible
+              scope: moments
+              selector: ">> [role=button][name='赞']"
+            - type: ElementVisible
+              scope: moments
+              selector: ">> [role=button][name='取消']"
+
+      - intent: click 赞 button if post is not already liked
+        precondition:
+          type: ElementVisible
+          scope: moments
+          selector: ">> [role=button][name='赞']"
+        action:
+          type: Click
+          scope: moments
+          selector: ">> [role=button][name='赞']"
+        expect:
+          type: Not
+          condition:
+            type: ElementVisible
+            scope: moments
+            selector: ">> [role=button][name='赞']"
+
+      - intent: capture Moments verification screenshot evidence
+        action:
+          type: Screenshot
+          scope: moments
+          path: "{param.screenshot_path}"
+        expect:
+          type: FileExists
+          path: "{param.screenshot_path}"
+
+  - name: return_to_main_ui
+    steps:
+      - intent: close 朋友圈 window cleanly
+        action:
+          type: Click
+          scope: moments
+          selector: ">> [role=button][name='关闭']"
+        expect:
+          type: WindowClosed
+          anchor: moments
+
+      - intent: raise and focus WeChat main window
+        action:
+          type: ActivateWindow
+          scope: wechat
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='微信']"
+
+      - intent: switch to 微信 tab and close any floating profile card
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='微信']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='会话']"
+
+      - intent: close 聊天信息 drawer if still open
+        precondition:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='添加']"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='聊天信息']"
+        expect:
+          type: Not
+          condition:
+            type: ElementVisible
+            scope: wechat
+            selector: ">> [role=button][name='添加']"
+
+      - intent: clear search query if 清空 button is visible
+        precondition:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        action:
+          type: Click
+          scope: wechat
+          selector: ">> [role=button][name='清空']"
+        expect:
+          type: ElementVisible
+          scope: wechat
+          selector: ">> [role=list][name='会话']"

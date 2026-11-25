@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../workflow-schema.json
+name: loupe_probe
+description: |
+  Non-destructive read-only probe for GNOME Image Viewer (图像查看器 / loupe).
+  If loupe is currently running, reads image resolution, format, file size via
+  AT-SPI2 and performs an OCR pass over the displayed pixels without mutating
+  window state.
+
+defaults:
+  timeout: 6s
+
+anchors:
+  loupe:
+    type: Root
+    process: loupe
+    selector: "[id=LpWindow]"
+
+outputs:
+  - name: image_dimensions
+    description: Pixel dimensions exposed in Loupe properties (e.g. 720 × 420).
+  - name: image_format
+    description: Image format label exposed in Loupe properties (e.g. PNG).
+  - name: file_size
+    description: File size label exposed in Loupe properties.
+  - name: visible_ocr_text
+    description: High-confidence OCR text lines recognized from the window view.
+
+phases:
+  - name: inspect_running_loupe
+    mount: [loupe]
+    precondition:
+      type: ProcessRunning
+      process: loupe
+    steps:
+      - intent: verify Loupe window main toolbar is responsive
+        action:
+          type: NoOp
+        expect:
+          type: ElementFound
+          scope: loupe
+          selector: ">> [id=zoom_toggle]"
+
+      - intent: extract image pixel dimensions
+        action:
+          type: Extract
+          key: image_dimensions
+          scope: loupe
+          selector: ">> [id=image_size] >> [id=subtitle]"
+          attribute: name
+        expect:
+          type: Always
+
+      - intent: extract image format
+        action:
+          type: Extract
+          key: image_format
+          scope: loupe
+          selector: ">> [id=image_format] >> [id=subtitle]"
+          attribute: name
+        expect:
+          type: Always
+
+      - intent: extract image file size
+        action:
+          type: Extract
+          key: file_size
+          scope: loupe
+          selector: ">> [id=file_size] >> [id=subtitle]"
+          attribute: name
+        expect:
+          type: Always
+
+      - intent: recognize visible text inside the open viewer via OCR
+        action:
+          type: OcrExtract
+          key: visible_ocr_text
+          scope: loupe
+          multiple: true
+          min_confidence: 0.7
+        expect:
+          type: Always
