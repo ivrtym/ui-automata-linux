@@ -1,6 +1,6 @@
-# UI Automata Linux
+# UI Automata Linux（Skill 版，无 MCP）
 
-面向 Linux 桌面与浏览器的自动化引擎、服务 SDK 与命令行工具集（提供 **Rust SDK API**、**本地 Unix Domain Socket 守护进程**、**声明式 YAML 工作流引擎**与 **CLI 工具**），底层基于 Linux **AT-SPI2 + D-Bus + X11/Wayland + OCR** 与 **CDP** 构建。
+面向 Linux 桌面与浏览器的自动化引擎、服务 SDK、命令行工具集与 Agent Skill（通过 [skills/ui-automata-linux/SKILL.md](skills/ui-automata-linux/SKILL.md) / [SKILL.zh-CN.md](skills/ui-automata-linux/SKILL.zh-CN.md) 驱动 `automata` CLI/守护进程，**已移除 MCP Server**），底层基于 Linux **AT-SPI2 + D-Bus + X11/Wayland + OCR** 与 **CDP** 构建。
 
 ## Workspace Crate 说明
 

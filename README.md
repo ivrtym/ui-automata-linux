@@ -1,6 +1,6 @@
-# UI Automata Linux
+# UI Automata Linux (With Skill Edition)
 
-Linux desktop & browser automation engine, service SDK, and CLI toolkit (**Rust API**, **local Unix Domain Socket daemon**, **declarative YAML workflow engine**, and **CLI tools**) built on Linux **AT-SPI2 + D-Bus + X11/Wayland + OCR** and **CDP**.
+Linux desktop & browser automation engine, service SDK, CLI toolkit, and Agent Skill (**CLI-only Skill mode** via `skills/ui-automata-linux/` + `automata` CLI/daemon — **no MCP server**), built on Linux **AT-SPI2 + D-Bus + X11/Wayland + OCR** and **CDP**.
 
 ## Workspace Crates
 

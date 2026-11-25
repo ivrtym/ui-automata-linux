@@ -73,13 +73,13 @@ phases:
             contains: "Hello World"
 ```
 
-**To run:** use the `workflow` MCP tool with `file: "win10/notepad/notepad_demo.yml"`, or pass YAML inline.
+**To run:** use `automata --json workflow run workflows/linux/loupe_e2e.yml` (or `cargo run -p automata-linux --bin ui-workflow -- workflows/linux/loupe_e2e.yml`).
 
-**To discover element IDs:** call `desktop element_tree` or `desktop find_elements` on the live window before writing selectors. Never guess automation IDs. You can also use `vision window_layout` for a quick OCR-based overview.
+**To discover element IDs:** capture an offline bundle with `automata --json explore capture-bundle --hwnd <HWND> --ocr --out /tmp/snap` and query selectors via `automata --json explore find --from-snapshot /tmp/snap --query "<SEL>"` (or inspect live via `automata --json explore find --hwnd <HWND> --query "<SEL>"`). Never guess automation IDs. You can also run `automata --json vision window-layout --hwnd <HWND>` for an OCR-based overview.
 
-**To browse the library:** call `resources list` to see all available files, then `resources read` with the full path (e.g. `win10/notepad/notepad_demo.yml`) to read one.
+**To browse the library:** run `automata --json workflow list` or inspect files directly under `workflows/`.
 
-**Reference examples** — use `resources read` to fetch these:
+**Reference examples**:
 - `win10/notepad/notepad_demo.yml` — launch, type, menus, dialogs, save, close
 - `win10/notepad/notepad_extract_value.yml` — `Extract` + `{output.x}` substitution
 - `win10/notepad/notepad_loop_counter.yml` — `Eval`, `flow_control`, loops, outputs
@@ -189,8 +189,8 @@ Anchor types:
 
 ## 5. Inspect the element tree before writing steps
 
-Before authoring steps for an unfamiliar page, call `desktop element_tree` or
-`desktop find_elements` to discover automation IDs and actual bounds. Do not
+Before authoring steps for an unfamiliar page, run `automata --json explore capture-bundle`
+or `automata --json explore find` to discover automation IDs and actual bounds. Do not
 guess selector IDs — one inspection call avoids many failed round-trips.
 
 Prefer `[id=AutomationId]` over `[name=...]` predicates: automation IDs are
@@ -255,7 +255,7 @@ itself (`role=window`) is **not** returned as a match. This means:
 - Do **not** try to scope an anchor to an embedded window element. Scope to the
   Root anchor and use `>>` to reach the leaves directly.
 
-Spot the pattern: if `find_elements` with `include_ancestors: true` shows an
+Spot the pattern: if `automata --json explore find` with `include_ancestors: true` shows an
 ancestor with `role=window` and a non-null `automation_id`, that element is a
 hosted child window and cannot be used as a selector target.
 

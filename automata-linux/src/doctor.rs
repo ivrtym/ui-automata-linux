@@ -874,8 +874,8 @@ fn inspect_apparmor_label_check(label: Option<&str>) -> (CheckItem, Option<Remed
             required_for: vec![],
         },
         Some(RemediationAction::ManualHint {
-            title: "使用 `aa-exec -p unconfined` 启动 MCP 以访问 Snap 应用 AT-SPI2".into(),
-            detail: "当由带有独立 profile 的宿主（如 ai.opencode）拉起时，可将命令包装为 `aa-exec -p unconfined -- automata-agent --stdio`，或在外部终端运行 `--port 3742` HTTP 模式。".into(),
+            title: "使用 `aa-exec -p unconfined` 启动 `automata` 以访问 Snap 应用 AT-SPI2".into(),
+            detail: "当由带有独立 profile 的宿主（如 ai.opencode）拉起时，可将命令包装为 `aa-exec -p unconfined -- automata daemon start`，或在宿主机终端提前启动 `automata daemon start`。".into(),
         }),
     )
 }

@@ -1,26 +1,26 @@
 ---
 name: ui-automata-linux
-description: Operate live Linux desktop applications (X11, XWayland, Wayland) and Chromium/Edge browsers using CLI-first `/home/ivrty/.ui-automata/automata` (with persistent `0600` UDS/`systemd --user` daemon, offline `SnapshotBundle` exploration, `explore batch`, and `record`) or fallback `automata-agent` MCP tools (`ui-automata`), and author, lint, and execute declarative YAML UI workflows. Activate when asked to inspect/control Linux GUI apps, automate desktop/browser UI tasks, capture/OCR screens, or write `.yml` UI workflows.
+description: Operate live Linux desktop applications (X11, XWayland, Wayland) and Chromium/Edge browsers using CLI-first `/home/ivrty/.ui-automata/automata` (with persistent `0600` UDS/`systemd --user` daemon, offline `SnapshotBundle` exploration, `explore batch`, and `record`), and author, lint, and execute declarative YAML UI workflows. Activate when asked to inspect/control Linux GUI apps, automate desktop/browser UI tasks, capture/OCR screens, or write `.yml` UI workflows.
 ---
 
-# UI Automata Linux Skill (CLI-First + Dual-Mode)
+# UI Automata Linux Skill (CLI-Only)
 
-Operate a live Linux desktop through the unified `AutomationService` stack:
-- **Primary Mode — CLI (`automata --json`)**: Use `/home/ivrty/.ui-automata/automata` whenever shell access is available. Avoids per-tool JSON schema overhead, connects to a shared persistent Unix domain socket daemon (preserving `ShadowDom`, `Recorder`, and logged-in apps across turns), and supports **single-pass offline `SnapshotBundle` capture** (`explore capture-bundle` + `explore find --from-snapshot`).
-- **Fallback Mode — MCP (`automata-agent`)**: Use the 13 `ui-automata` MCP tools when the host has no local shell, runs over remote HTTP MCP, or needs capabilities exposed directly on MCP (`browser` CDP, `clipboard`, raw pointer drags/scrolls via `input`, or `automata://` bundled `resources`).
+Operate a live Linux desktop through the unified `AutomationService` CLI (`/home/ivrty/.ui-automata/automata --json`):
+- Connects to a shared persistent Unix domain socket daemon (`automata daemon start` / `systemd --user`), preserving `Desktop`, `ShadowDom`, `Recorder`, and logged-in apps across turns without per-call JSON schema overhead.
+- Supports **single-pass offline `SnapshotBundle` capture** (`explore capture-bundle` + `explore find --from-snapshot`), multi-step fault-tolerant probes (`explore batch`), interactive recording (`record start/stop`), and deterministic YAML workflow execution (`workflow run`).
 
 Always pick the highest-reliability automation layer available, inspect before acting, and verify UI state changes after acting.
 
 ---
 
-## 1. CLI-First Initialization & Standard Operating Loop
+## 1. CLI Initialization & Standard Operating Loop
 
 > Global CLI flags (valid on all subcommands): `--json`, `--socket <PATH>`, `--no-daemon`, `--workflows-dir <DIR>`.  
 > Window target flags (`explore` / `act` / `record start`): `--hwnd <0x...>` (fastest), `--process <NAME>`, `--pid <PID>`, `--title <TEXT>`, `--selector <SEL>`.
 
 1. **Ensure Persistent Daemon Session**:
    - Check `/home/ivrty/.ui-automata/automata --json daemon status`.
-   - If not running, start it in the background once (`automata daemon start`, or install `systemd --user` persistence via `automata daemon systemd-unit --install --enable`) so `ShadowDom`, `Recorder`, and launched windows persist across turns without killing/re-launching logged-in apps.
+   - If not running, start it once (`automata daemon start`, or install `systemd --user` persistence via `automata daemon systemd-unit --install --enable`) so `ShadowDom`, `Recorder`, and launched windows persist across turns without killing/re-launching logged-in apps.
    - Check runtime readiness and active backend via `automata --json system capabilities` (and `automata system doctor --profile auto` if display/input is misconfigured).
 2. **Step 1 — Acquire Window (`act launch` / `explore windows`)**:
    - Attach cleanly or launch: `automata --json explore windows` (or `automata --json act launch <TARGET> --wait new_window --timeout-ms 30000`) to capture `hwnd` (`"0x..."`), `pid`, `process`, and `bounds`.
@@ -36,7 +36,7 @@ Always pick the highest-reliability automation layer available, inspect before a
    - Probe multi-branch dialogs/menus without closing apps between steps using `automata --json explore batch --hwnd <HWND> --file probes.json --bundle-dir /tmp/ui_probes`:
      ```json
      [
-       { "name": "open_menu", "step": { "intent": "open menu", "action": { "type": "Invoke", "scope": "window", "selector": ">> [role=button][name=Menu]" } }, "settle_ms": 300, "capture_tree": true, "capture_screenshot": true, "capture_ocr": false, "query": ">> [role=dialog]" }
+       { "name": "open_menu", "step": { "intent": "open menu", "action": { "type": "Invoke", "scope": "window", "selector": ">> [role=button][name=Menu]" }, "expect": { "type": "Always" } }, "settle_ms": 300, "capture_tree": true, "capture_screenshot": true, "capture_ocr": false, "query": ">> [role=dialog]" }
      ]
      ```
      (`BatchProbeStep` continues on step failure unless `--stop-on-error` is passed.)
@@ -50,19 +50,19 @@ Always pick the highest-reliability automation layer available, inspect before a
 
 ---
 
-## 2. Layered Strategy & Dual-Mode Matrix (CLI <-> MCP)
+## 2. Layered Strategy & CLI Capability Reference
 
-**Priority Order**: **AT-SPI2 UI Tree (`explore` + `act`)** → **Browser CDP (`browser` MCP)** → **OCR Vision (`vision` / `Ocr*` steps)** → **Raw Input (`input` MCP / `Pointer*` / `act move-cursor`)**.
+**Priority Order**: **AT-SPI2 UI Tree (`explore` + `act`)** → **Browser CDP (`automata-browser` / `Browser*` steps)** → **OCR Vision (`vision` / `Ocr*` steps)** → **Raw Input (`Pointer*` / `PressKey` / `act move-cursor`)**.
 
-| Capability | CLI Command (`automata --json ...`) | MCP Tool (`automata-agent`) | Notes |
-| --- | --- | --- | --- |
-| Daemon / Readiness | `daemon start\|status\|stop\|systemd-unit`, `system ping\|processes\|capabilities\|doctor` | `system` (`ping`, `list_processes`, `exec`, `env`, ...) | Persistent daemon binds per-user `0700/0600` UDS; CLI falls back in-process with `--no-daemon`. |
-| Window / Tree / Snapshot | `explore windows\|focused\|tree\|find\|capture-bundle\|batch` | `desktop` (`list_windows`, `element_tree`, `find_elements`, `focused_window`) | MCP payloads > `32 KB` spill to `0600` `spill_path`; CLI `capture-bundle` writes full offline `SnapshotBundle` + `--from-snapshot`. |
-| Vision / OCR / PNG | `vision window-layout --hwnd <H>`, `vision screen-layout`, `vision capture [--hwnd <H>] [--path <PNG>]` | `vision` (`window_layout`, `window_probe`, `screen_layout`, `capture`) | Supports `ort-ppocr`, `tesseract`, or optional `omniparser` (`AUTOMATA_OMNIPARSER_URL`); prefer `window-layout` over `screen-layout`. |
-| Launch & Window Ops | `act launch <TARGET> [--wait new_pid\|new_window\|match_any] [--timeout-ms 30000]`, `act focus\|close` | `app` (`launch`, `list_installed`, `focus`, `kill`), `window` (`minimize`, `maximize`, `restore`, `close`, `focus`, `set_bounds`, `get_bounds`, `screenshot`) | Auto-injects `QT_ACCESSIBILITY=1`, `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`, `NO_AT_BRIDGE=0`. |
-| Semantic & Step Actions | `act invoke --elem <S>`, `act set-value --elem <S> --value <V>`, `act click --elem <S>`, `act steps --file <JSON>`, `act move-cursor --x <X> --y <Y>` | `run_actions` (`window`, `steps`, `reset`, `timeout_secs`) | Mounts Root anchor `"window"`; reuses `ShadowDom` across calls while window matches unless `reset: true`. |
-| Workflows & Recording | `workflow list\|lint <F>\|run <F>\|status\|cancel`, `record start\|status\|stop` | `start_workflow` (`file\|local_file\|name\|yaml`, `params`, `background`), `workflow` (`list\|read\|lint\|status\|cancel\|list_runs`) | `lint` returns structured diagnostics (`line`, `col`, `path`, `message`); `record stop` exports validated YAML. |
-| Browser CDP / Clipboard / Raw Input | *(use MCP or native tools; `Browser*` / `Pointer*` / `PressKey` also work inside `act steps` & `.yml`)* | `browser` (`ensure\|tabs\|open\|navigate\|dom\|eval\|screenshot`), `clipboard` (`read\|write`), `input` (`mouse_click\|drag\|scroll\|key_press\|type_text`), `file`, `resources` | Call `browser(ensure)` before `browser(tabs)`; use `desktop`/`act` for browser chrome UI. Read bundled guides via `resources` or repo `AGENTS.md`. |
+| Capability | CLI Command (`automata --json ...`) | Notes |
+| --- | --- | --- |
+| Daemon / Readiness | `daemon start\|status\|stop\|systemd-unit`, `system ping\|processes\|capabilities\|doctor` | Persistent daemon binds per-user `0700/0600` UDS; pass `--no-daemon` for one-shot in-process execution. |
+| Window / Tree / Snapshot | `explore windows\|focused\|tree\|find\|capture-bundle\|batch` | `capture-bundle` writes full offline `SnapshotBundle`; `find --from-snapshot` queries locally without live D-Bus traffic. |
+| Vision / OCR / PNG | `vision window-layout --hwnd <H>`, `vision screen-layout`, `vision capture [--hwnd <H>] [--path <PNG>]` | Supports `ort-ppocr`, `tesseract`, or optional `omniparser` (`AUTOMATA_OMNIPARSER_URL`); prefer `window-layout` over `screen-layout`. |
+| Launch & Window Ops | `act launch <TARGET> [--wait new_pid\|new_window\|match_any] [--timeout-ms 30000]`, `act focus\|close` | Auto-injects `QT_ACCESSIBILITY=1`, `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`, `NO_AT_BRIDGE=0`. |
+| Semantic & Step Actions | `act invoke --elem <S>`, `act set-value --elem <S> --value <V>`, `act click --elem <S>`, `act steps --file <JSON>`, `act move-cursor --x <X> --y <Y>` | Mounts Root anchor `"window"`; reuses `ShadowDom` across calls while window matches. |
+| Workflows & Recording | `workflow list\|lint <F>\|run <F>\|status\|cancel`, `record start\|status\|stop` | `lint` returns structured diagnostics (`line`, `col`, `path`, `message`); `record stop` exports validated YAML. |
+| Browser CDP / Standalone | `automata-browser tabs\|open\|navigate\|eval\|dom\|screenshot`, or `BrowserNavigate` / `BrowserEval` / `Pointer*` inside `act steps` & `.yml` | Use `desktop`/`act` for browser chrome UI (address bar, downloads dialog) and CDP for page DOM. |
 
 ---
 
@@ -71,19 +71,19 @@ Always pick the highest-reliability automation layer available, inspect before a
 1. **Wayland vs X11/XWayland**:
    - **Native Wayland clients (e.g. GTK4)**: AT-SPI2 `bounds()` frequently reports window-relative `(0, 0)` origin, making screen-coordinate `Click` miss. **Strongly prefer AT-SPI2 semantic actions (`Invoke`, `SetValue`, `Focus`, `PressKey`)** over `Click` / `ClickAt`.
    - **X11 / XWayland clients** (e.g. Electron, Chromium, Qt-XCB / `QT_QPA_PLATFORM=xcb`): support full screen coordinates and fast zero-flash in-memory `x11rb` capture.
-   - **`ydotool` on Wayland**: `input` / `PointerScroll` / `PointerDrag` handle GNOME fractional/2x absolute scaling compensation and discrete `+-1` scroll ticks automatically; requires `ydotoold` running and `/dev/uinput` access.
+   - **`ydotool` on Wayland**: `PointerScroll` / `PointerDrag` / pointer actions handle GNOME fractional/2x absolute scaling compensation and discrete `+-1` scroll ticks automatically; requires `ydotoold` running and `/dev/uinput` access.
 2. **Qt & GTK Overlay Nodes / Custom Widgets**:
    - Popups, dropdowns, and modals often mount as siblings under the `Application` node rather than children of the main frame. `automata-linux` exposes visible overlay siblings under the window subtree — query them via `>> [role=menu] >> [role='menu item']` or `>> [role=dialog]`.
    - Hidden/offscreen Qt `QStackedLayout` pages can leave stale `0x0` placeholders (`ElementFound` true even when hidden): always prefer `ElementVisible` or inspect `visibility`/`bounds` rather than `ElementFound` alone when switching tabs/pages.
    - Some custom Qt widgets expose `[role=button]` without an AT-SPI2 `Action` interface (`Invoke` fails with no action interface) or trigger reliably only via `Click`, `ClickAt`, or `PressKey` (`{ENTER}` after `Focus`). Prefer `Invoke` -> fallback to `Click` / `PressKey` / `OcrClick`.
 3. **HWND Staleness & Reuse**:
-   - Synthetic HWNDs (`"0x..."`) derive from AT-SPI2 `(bus_name, object_path)`. Closing/recreating windows invalidates handles — re-run `automata explore windows` (`desktop(list_windows)`).
+   - Synthetic HWNDs (`"0x..."`) derive from AT-SPI2 `(bus_name, object_path)`. Closing/recreating windows invalidates handles — re-run `automata explore windows`.
    - In YAML workflows where the app is already open and logged in (e.g. WeChat), configure `launch.reuse_existing: true` and `launch.env` (e.g. `QT_QPA_PLATFORM: xcb`) to attach without respawning.
 4. **AppArmor & Snap Applications (Ubuntu)**:
    - On Ubuntu hosts where tools run under named AppArmor profiles (`ai.opencode (unconfined)`, etc.), Snap packages (`snap.firefox.firefox`, etc.) permit AT-SPI2 D-Bus traffic only from literal `peer=(label=unconfined)`.
-   - `automata` / `automata-agent` skip `AccessDenied` Snap peers cleanly during enumeration; to automate Snap UI itself, prefix execution with `aa-exec -p unconfined -- ...`.
+   - `automata` skips `AccessDenied` Snap peers cleanly during enumeration; to automate Snap UI itself, prefix execution with `aa-exec -p unconfined -- automata ...`.
 5. **Coexistence with Host Tools**:
-   - Use native coding agent tools (`read_file`, `write_file`, `run_command`) for codebase files and reserve `automata` / MCP `file` & `system` for desktop-automation checks or remote HTTP hosts.
+   - Use native coding agent tools (`read_file`, `write_file`, `run_command`) for codebase files and reserve `automata` CLI (`explore`, `act`, `vision`, `workflow`, `record`) for desktop UI inspection and automation.
 
 ---
 
@@ -110,7 +110,7 @@ Use normalized role strings in selectors (not raw AT-SPI2 enum names like `PushB
 
 ---
 
-## 5. Step & Workflow Specification (`act steps` / `run_actions` / `.yml`)
+## 5. Step & Workflow Specification (`act steps` / `.yml`)
 
 ### Step Structure
 
@@ -187,7 +187,7 @@ phases:
         expect: { type: ElementHasText, scope: search_box, selector: "*", pattern: { contains: "{param.query}" } }
 ```
 
-Always validate authored YAML with `automata --json workflow lint <FILE>` (or MCP `workflow(lint)`) before executing.
+Always validate authored YAML with `automata --json workflow lint <FILE>` before executing.
 
 ---
 
