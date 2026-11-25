@@ -80,7 +80,7 @@ description: 仅通过 CLI 优先的 `/home/ivrty/.ui-automata/automata`（配�
    - 合成 HWND（`"0x..."`）由 AT-SPI2 `(bus_name, object_path)` 派生。窗口关闭/重建后旧句柄即失效——请重新运行 `automata explore windows`。
    - 若应用在 YAML 工作流运行前已打开并登录（如微信 WeChat），请配置 `launch.reuse_existing: true` 与 `launch.env`（如 `QT_QPA_PLATFORM: xcb`），以便直接附着而不重复拉起新实例。
 4. **AppArmor 与 Snap 应用（Ubuntu）**：
-   - 在工具运行于具名 AppArmor 配置（如 `ai.opencode (unconfined)` 等）的 Ubuntu 宿主上，Snap 软件包通常仅允许来自字面量 `peer=(label=unconfined)` 的 AT-SPI2 D-Bus 通信。
+   - 在工具运行于具名 AppArmor 配置（如 `ai.opencode (unconfined)` 等）的 Ubuntu 宿主上，Snap 软件包（如 `snap.firefox.firefox`）通常仅允许来自字面量 `peer=(label=unconfined)` 的 AT-SPI2 D-Bus 通信。
    - `automata` 在枚举时会自动跳过返回 `AccessDenied` 的 Snap 对端；若确实需要自动化 Snap 应用自身 UI，请在执行命令前加前缀 `aa-exec -p unconfined -- automata ...`。
 5. **与宿主 Agent 工具的分工共存**：
    - 读写工作区代码文件请使用 Agent 原生编码工具（`read_file`、`write_file`、`run_command`），将 `automata` CLI 保留给桌面 UI 检查与自动化操作。
@@ -89,17 +89,105 @@ description: 仅通过 CLI 优先的 `/home/ivrty/.ui-automata/automata`（配�
 
 ## 4. 选择器语法与 Linux 归一化角色名
 
+### 组合器与属性操作符
+
 - `>>` ：后代匹配（从 `scope` 根节点向下任意深度搜索）
 - `>` ：直接子控件匹配
-- `[attr=val]` / `[attr^=val]` / `[attr$=val]` / `[attr~=val]` / `[attr=a|b]`
-- `:nth(N)` / `:parent`
-- 归一化角色：`window`、`dialog`、`pane`、`menu`、`tab`、`tool tip`、`button`、`edit`、`text`、`menu bar`、`menu item`、`list item`、`tree item`、`check box`、`radio button`、`combo box`、`tab item`、`document`。
+- `[attr=val]` ：精确匹配
+- `[attr^=val]` / `[attr$=val]` / `[attr~=val]` ：前缀匹配 / 后缀匹配 / 子串包含匹配
+- `[attr=a|b]` ：或逻辑匹配（如 `button|menu item`）
+- `:nth(N)` ：从 0 开始计数的第 N 个匹配（`*` 通配符匹配所有子节点）
+- `:parent` ：回退到当前匹配节点的父节点
+
+属性值包含空格或冒号时需加引号：`[role='menu item'][name='Save As...']`。
+
+### 归一化角色名（`normalize_role`）
+
+在选择器中请使用归一化角色字符串（而非 `PushButton` 等原始 AT-SPI2 枚举名）：
+
+- 窗口 / 容器：`window`、`dialog`、`pane`、`menu`、`tab`、`tool tip`
+- 控件：`button`、`edit`、`text`、`menu bar`、`menu item`、`list item`、`tree item`、`check box`、`radio button`、`combo box`、`tab item`、`document`
 
 ---
 
 ## 5. 步骤与工作流规范（`act steps` / `.yml`）
 
-执行任何新编写的 YAML 前，请务必先用 `automata --json workflow lint <FILE>` 完成静态校验。详情参考 [SKILL.md](SKILL.md) 与仓库根目录 [DEVELOPMENT.md](../../DEVELOPMENT.md)。
+### 步骤结构
+
+```json
+{
+  "intent": "click Save button",
+  "precondition": { "type": "ElementVisible", "scope": "window", "selector": ">> [role=button][name=Save]" },
+  "action": { "type": "Invoke", "scope": "window", "selector": ">> [role=button][name=Save]" },
+  "fallback": { "type": "OcrClick", "scope": "window", "pattern": { "exact": "Save" } },
+  "expect": { "type": "DialogAbsent", "scope": "window" },
+  "timeout": "8s",
+  "on_failure": "abort",
+  "on_success": "continue"
+}
+```
+
+- `on_failure`：`"abort"`（默认）\| `"continue"`
+- `on_success`：`"continue"`（默认）\| `"return_phase"`
+- 变量替换：`{param.key}`（YAML 参数）、`{output.key}` / `{local.key}`（由 `Extract` / `OcrExtract` / `WriteOutput` 写入的运行时值，亦可用于 `fallback` 中）、`{env.VAR}`。
+
+### 支持的 `Action` 类型（引擎原语规范）
+
+- **AT-SPI2 元素动作**（需要 `scope` + `selector`）：
+  `Click`、`DoubleClick`、`Hover`、`ScrollIntoView`、`ClickAt`、`TypeText`、`Focus`、`Invoke`、`SetValue`、`Extract`
+- **窗口 / 对话框作用域动作**（需要 `scope`）：
+  `ActivateWindow`、`MinimizeWindow`、`CloseWindow`、`DismissDialog`
+- **前台 / 键盘动作**：
+  `PressKey`（可选 `scope` + `selector`，或发送全局窗口/桌面按键）、`ClickForegroundButton`、`ClickForeground`
+- **正交视觉 OCR 与截屏**：
+  `OcrClick`、`OcrHover`、`OcrTypeText`、`OcrExtract`、`Screenshot`（支持可选 `scope`+`selector` 区域裁剪、`region`、`min_confidence`、`nth`、`offset_x`/`offset_y`）
+- **Tier-4 原始指针动作**：
+  `PointerScroll`、`PointerDrag`
+- **浏览器 CDP 动作**：
+  `BrowserNavigate`、`BrowserEval`
+- **控制 / 数据 / 系统动作**：
+  `NoOp`、`Sleep`、`WriteOutput`、`Exec`、`Eval`、`MoveFile`
+
+### 支持的 `Condition` 类型（引擎原语规范）
+
+- **UI 树条件**：`ElementFound`、`ElementEnabled`、`ElementVisible`、`ElementHasText`、`ElementHasChildren`
+- **窗口与进程条件**：`WindowWithAttribute`、`ProcessRunning`、`WindowClosed`、`WindowWithState`、`DialogPresent`、`DialogAbsent`、`ForegroundIsDialog`
+- **OCR 条件**：`OcrTextFound`（按 `(hwnd, region)` 约 400 ms 节流，每次执行动作后清空缓存）
+- **浏览器 CDP 条件**：`TabWithAttribute`、`TabWithState`
+- **系统 / 组合条件**：`FileExists`、`Always`、`ExecSucceeded`、`EvalCondition`、`AllOf`、`AnyOf`、`Not`
+
+### 最小合法 YAML 工作流模板
+
+```yaml
+name: example_linux_flow
+params:
+  - name: query
+    default: "hello"
+defaults:
+  timeout: 10s
+  retry:
+    fixed: { count: 1, delay: 300ms }
+launch:
+  exe: my-app
+  wait: new_window
+  timeout: 15s
+  reuse_existing: true
+  env:
+    QT_QPA_PLATFORM: xcb
+anchors:
+  app_win: { type: Root, process: my-app, selector: "*" }
+  search_box: { type: Stable, parent: app_win, selector: ">> [role=edit]" }
+phases:
+  - name: search
+    mount: [app_win, search_box]
+    unmount: [search_box]
+    steps:
+      - intent: enter query
+        action: { type: SetValue, scope: search_box, selector: "*", value: "{param.query}" }
+        expect: { type: ElementHasText, scope: search_box, selector: "*", pattern: { contains: "{param.query}" } }
+```
+
+执行任何新编写的 YAML 前，请务必先用 `automata --json workflow lint <FILE>` 完成静态校验。详情参考 [DEVELOPMENT.md](../../DEVELOPMENT.md)。
 
 ---
 

@@ -5,7 +5,7 @@
 1. **agent-sh/computer-use-linux**（MIT 许可证）
    - 仓库地址：https://github.com/agent-sh/computer-use-linux
    - 版权所有 (c) agent-sh 贡献者
-   - 在 `automata-linux` 与 `automata-agent` 中参考/适配的模式：有界 `CommandRunner`（`ETXTBSY` 重试/超时处理）、53-bit JS 安全窗口 ID 约束、MCP HTTP 安全中间件、并发/有界 AT-SPI2 树遍历与紧凑 `U+FFFC` 节点过滤、Qt/GTK `EditableText` 回读校验、多合成器窗口管理后端以及 `RemoteDesktop + EIS` 输入设计。
+   - 在 `automata-linux` 中参考/适配的模式：有界 `CommandRunner`（`ETXTBSY` 重试/超时处理）、53-bit JS 安全窗口 ID 约束、并发/有界 AT-SPI2 树遍历与紧凑 `U+FFFC` 节点过滤、Qt/GTK `EditableText` 回读校验、多合成器窗口管理后端以及 `RemoteDesktop + EIS` 输入设计。
 
 2. **enigo-rs/enigo**（MIT 许可证）
    - 仓库地址：https://github.com/enigo-rs/enigo

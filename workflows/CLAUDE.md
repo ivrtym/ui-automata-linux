@@ -1,6 +1,6 @@
 # Workflow Authoring Guide
 
-> **Engine source code:** https://github.com/visioncortex/ui-automata/
+> **Engine source code:** https://github.com/ivrtym/ui-automata-linux
 > Read the source when you need to understand exact action semantics, condition evaluation,
 > or recovery handler behaviour beyond what this guide covers.
 
