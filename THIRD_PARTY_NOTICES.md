@@ -5,7 +5,7 @@ This repository (`ui-automata-linux`) incorporates MIT-licensed components from 
 1. **agent-sh/computer-use-linux** (MIT License)  
    - Repository: https://github.com/agent-sh/computer-use-linux  
    - Copyright (c) agent-sh contributors  
-   - Referenced/adapted patterns in `automata-linux` & `automata-agent`: bounded `CommandRunner` (`ETXTBSY` retry / timeout handling), 53-bit JS-safe window ID constraints, MCP HTTP security middleware, concurrent/bounded AT-SPI2 tree traversal & compact `U+FFFC` node filtering, Qt/GTK `EditableText` readback verification, multi-compositor windowing backends, and `RemoteDesktop + EIS` input design.
+   - Referenced/adapted patterns in `automata-linux`: bounded `CommandRunner` (`ETXTBSY` retry / timeout handling), 53-bit JS-safe window ID constraints, concurrent/bounded AT-SPI2 tree traversal & compact `U+FFFC` node filtering, Qt/GTK `EditableText` readback verification, multi-compositor windowing backends, and `RemoteDesktop + EIS` input design.
 
 2. **enigo-rs/enigo** (MIT License)  
    - Repository: https://github.com/enigo-rs/enigo  
